@@ -1,6 +1,6 @@
 ## 简介
 
-* dqueue是一个基于顺序写文件的队列，包装了一层redis协议
+* 之前写的taskbuffering的aofutil是个简易的写磁盘的工具，在这个基础上重新写了dqueue(disk based queue)，dqueue是一个基于顺序写文件的队列，包装了一层redis协议
 * 通过一个索引文件，和多个数据文件来组织数据，数据文件按照1MB分成N个文件，自动删除已经消费的队列数据文件
 
 ## 使用
@@ -45,5 +45,11 @@ Benchmark_PushAndPop      500000	      6646 ns/op
 ok  	fs	3.410s
 ```
 
-
+## TODO
+* 更多的错误处理以及日志
+* 队列长度管理
+* 定时清理消费完的数据文件
+* PUB SUB支持
+* 集群和可用性
+* 优化写性能,flush的策略问题
 
