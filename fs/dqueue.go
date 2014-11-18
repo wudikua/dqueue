@@ -23,11 +23,9 @@ func NewInstance(path string) *DQueueFs {
 	}
 
 	instance := &DQueueFs{
-		dbName:    "dqueue",
-		path:      path,
-		dbs:       make(map[int]*db.DQueueDB, 1),
-		pushMutex: new(sync.Mutex),
-		popMutex:  new(sync.Mutex),
+		dbName: "dqueue",
+		path:   path,
+		dbs:    make(map[int]*db.DQueueDB, 1),
 	}
 
 	// 载入索引文件
