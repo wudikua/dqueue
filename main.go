@@ -1,7 +1,7 @@
 package main
 
 import (
-	"proxy"
+	"github.com/wudikua/dqueue/proxy"
 )
 
 func main() {

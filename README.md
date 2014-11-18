@@ -6,8 +6,8 @@
 ## 使用
 
 ### 下载源码
-* git clone https://git.wemomo.com/meng.jun/dqueue.git
-* cd dqueue
+* 确定已经设置了GOPATH
+* go get github.com/wudikua/dqueue
 
 ### 下载依赖
 * go get github.com/julienschmidt/httprouter 一个http服务
