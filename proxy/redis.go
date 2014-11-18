@@ -10,16 +10,21 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 )
 
 type DQueueHandler struct {
-	queues map[string]*fs.DQueueFs
+	queues    map[string]*fs.DQueueFs
+	pushMutex *sync.Mutex
+	popMutex  *sync.Mutex
 }
 
 var handler *DQueueHandler
 
 func (h *DQueueHandler) RPOP(key string) ([]byte, error) {
+	this.pushMutex.Lock()
+	defer this.pushMutex.Unlock()
 	if h.queues[key] == nil {
 		h.queues[key] = fs.NewInstance(key)
 	}
@@ -28,6 +33,8 @@ func (h *DQueueHandler) RPOP(key string) ([]byte, error) {
 }
 
 func (h *DQueueHandler) RPUSH(key string, value []byte) (int, error) {
+	this.popMutex.Lock()
+	defer this.popMutex.Unlock()
 	if h.queues[key] == nil {
 		h.queues[key] = fs.NewInstance(key)
 	}
