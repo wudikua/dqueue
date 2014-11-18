@@ -23,8 +23,8 @@ type DQueueHandler struct {
 var handler *DQueueHandler
 
 func (h *DQueueHandler) RPOP(key string) ([]byte, error) {
-	this.pushMutex.Lock()
-	defer this.pushMutex.Unlock()
+	h.pushMutex.Lock()
+	defer h.pushMutex.Unlock()
 	if h.queues[key] == nil {
 		h.queues[key] = fs.NewInstance(key)
 	}
@@ -33,8 +33,8 @@ func (h *DQueueHandler) RPOP(key string) ([]byte, error) {
 }
 
 func (h *DQueueHandler) RPUSH(key string, value []byte) (int, error) {
-	this.popMutex.Lock()
-	defer this.popMutex.Unlock()
+	h.popMutex.Lock()
+	defer h.popMutex.Unlock()
 	if h.queues[key] == nil {
 		h.queues[key] = fs.NewInstance(key)
 	}
