@@ -46,9 +46,7 @@ func ListenAndServeRedis() {
 
 	// 启动redis server
 	handler = &DQueueHandler{
-		queues:    make(map[string]*fs.DQueueFs, 1),
-		pushMutex: new(sync.Mutex),
-		popMutex:  new(sync.Mutex),
+		queues: make(map[string]*fs.DQueueFs, 1),
 	}
 	server, _ := redis.NewServer(redis.DefaultConfig().Proto("tcp").Host(host).Port(port).Handler(handler))
 
