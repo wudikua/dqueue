@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"syscall"
 )
 
@@ -39,6 +40,7 @@ func ListenAndServeRedis() {
 	var host string
 	var port int
 	flag.StringVar(&host, "h", "127.0.0.1", "host")
+	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 	flag.IntVar(&port, "p", 9008, "port")
 	flag.Parse()
 
@@ -56,11 +58,23 @@ func ListenAndServeRedis() {
 	router.GET("/status", Status)
 	go http.ListenAndServe(":8080", router)
 
+	// 性能分析
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		pprof.StartCPUProfile(f)
+	}
+
+	go http.ListenAndServe(":8081", nil)
+
 	server.ListenAndServe()
 }
 
 func Destory() {
-
+	pprof.StopCPUProfile()
 }
 
 func sigHandler() {
