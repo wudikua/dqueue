@@ -90,7 +90,7 @@ func (this *DQueueDB) writeInt32(i int) (int, error) {
 
 func (this *DQueueDB) readInt32() (int, error) {
 	bs := make([]byte, 4)
-	n, err := io.ReadFull(this.fos.Read, bs)
+	n, err := io.ReadFull(this.fos, bs)
 
 	if err != nil {
 		return n, err
@@ -134,7 +134,7 @@ func (this *DQueueDB) Read() ([]byte, error) {
 	length := next - cur - 4
 	bs := make([]byte, length)
 	// 顺序读数据
-	n, err := io.ReadFull(this.fos.Read, bs)
+	n, err := io.ReadFull(this.fos, bs)
 	if err != nil {
 		return nil, err
 	}
