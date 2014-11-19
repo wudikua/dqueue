@@ -5,6 +5,7 @@ import (
 	"github.com/wudikua/dqueue/db"
 	"github.com/wudikua/dqueue/idx"
 	"os"
+	"sync"
 )
 
 type DQueueFs struct {
@@ -12,6 +13,8 @@ type DQueueFs struct {
 	path   string
 	dbs    map[int]*db.DQueueDB
 	idx    *idx.DQueueIndex
+	rlock  sync.Mutex
+	wlock  sync.Mutex
 }
 
 func NewInstance(path string) *DQueueFs {
@@ -52,6 +55,8 @@ func NewInstance(path string) *DQueueFs {
 }
 
 func (this *DQueueFs) Push(bs []byte) error {
+	this.wlock.Lock()
+	defer this.wlock.Unlock()
 	dbs := this.dbs[this.idx.GetWriteNo()]
 push:
 	err := dbs.Write(bs)
@@ -73,6 +78,8 @@ push:
 }
 
 func (this *DQueueFs) Pop() ([]byte, error) {
+	this.rlock.Lock()
+	defer this.rlock.Unlock()
 	dbs := this.dbs[this.idx.GetReadNo()]
 pop:
 	bs, err := dbs.Read()
