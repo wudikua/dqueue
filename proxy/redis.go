@@ -17,8 +17,6 @@ type DQueueHandler struct {
 	queues map[string]*fs.DQueueFs
 }
 
-var mutux sync.Mutex
-
 var handler *DQueueHandler
 
 func (h *DQueueHandler) RPOP(key string) ([]byte, error) {
