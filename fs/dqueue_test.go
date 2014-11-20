@@ -111,3 +111,18 @@ func Benchmark_PushAndPop(b *testing.B) {
 		}
 	}
 }
+
+func Benchmark_Push(b *testing.B) {
+	os.Remove("test/dqueue.idx")
+	os.Remove("test/dqueue_1.db")
+	fs := NewInstance("test")
+	if fs == nil {
+		b.Fail()
+	}
+	for i := 0; i < b.N; i++ {
+		err := fs.Push([]byte(fmt.Sprintf("%d", i)))
+		if err != nil {
+			b.Fail()
+		}
+	}
+}
