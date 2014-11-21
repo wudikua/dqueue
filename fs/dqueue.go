@@ -54,7 +54,7 @@ func NewInstance(path string) *DQueueFs {
 	return instance
 }
 
-func (this *DQueueFs) Push(bs []byte) error {
+func (this *DQueueFs) Push(bs []byte) (int, error) {
 	this.wlock.Lock()
 	defer this.wlock.Unlock()
 	dbs := this.dbs[this.idx.GetWriteNo()]
@@ -70,14 +70,15 @@ push:
 			this.dbs[dbNo+1] = dbs
 			goto push
 		}
-		return err
+		return this.idx.GetLength(), err
 	}
 	// 写索引文件
 	this.idx.SetWriteIndex(dbs.GetWritePos())
-	return nil
+	this.idx.IncLength()
+	return this.idx.GetLength(), nil
 }
 
-func (this *DQueueFs) Pop() ([]byte, error) {
+func (this *DQueueFs) Pop() (int, []byte, error) {
 	this.rlock.Lock()
 	defer this.rlock.Unlock()
 	dbs := this.dbs[this.idx.GetReadNo()]
@@ -99,11 +100,12 @@ pop:
 				goto pop
 			}
 		}
-		return bs, err
+		return this.idx.GetLength(), bs, err
 	}
 	// 写索引文件
 	this.idx.SetReadIndex(dbs.GetReadPos())
-	return bs, err
+	this.idx.DecLength()
+	return this.idx.GetLength(), bs, err
 }
 
 func (this *DQueueFs) Stats() map[string]interface{} {

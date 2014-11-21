@@ -16,6 +16,7 @@ type DQueueIndex struct {
 	readIndex  int
 	writeNo    int
 	writeIndex int
+	length     int
 	file       string
 	fp         *os.File
 	w, r       int
@@ -44,6 +45,7 @@ func NewInstance(file string) *DQueueIndex {
 			readIndex:  0,
 			writeNo:    1,
 			writeIndex: 0,
+			length:     0,
 			file:       file,
 			fp:         fp,
 			w:          0,
@@ -76,6 +78,7 @@ func (this *DQueueIndex) initIndexInfoFromFile() error {
 	this.readIndex, _ = this.readInt32()
 	this.writeNo, _ = this.readInt32()
 	this.writeIndex, _ = this.readInt32()
+	this.length, _ = this.readInt32()
 	return nil
 }
 
@@ -161,11 +164,30 @@ func (this *DQueueIndex) GetWriteIndex() int {
 	return this.writeIndex
 }
 
+func (this *DQueueIndex) IncLength() (int, error) {
+	this.length = this.length + 1
+	bs := make([]byte, 4)
+	binary.BigEndian.PutUint32(bs, uint32(this.length))
+	return this.fp.WriteAt(bs, 22)
+}
+
+func (this *DQueueIndex) DecLength() (int, error) {
+	this.length = this.length - 1
+	bs := make([]byte, 4)
+	binary.BigEndian.PutUint32(bs, uint32(this.length))
+	return this.fp.WriteAt(bs, 22)
+}
+
+func (this *DQueueIndex) GetLength() int {
+	return this.length
+}
+
 func (this *DQueueIndex) Stats() map[string]interface{} {
 	stats := make(map[string]interface{}, 4)
 	stats["readNo"] = this.readNo
 	stats["readIndex"] = this.readIndex
 	stats["writeNo"] = this.writeNo
 	stats["writeIndex"] = this.writeIndex
+	stats["length"] = this.length
 	return stats
 }

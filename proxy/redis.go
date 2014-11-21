@@ -24,7 +24,7 @@ func (h *DQueueHandler) RPOP(key string) ([]byte, error) {
 	if h.queues[key] == nil {
 		h.queues[key] = fs.NewInstance(key)
 	}
-	v, _ := h.queues[key].Pop()
+	_, v, _ := h.queues[key].Pop()
 	return v, nil
 }
 
@@ -32,8 +32,7 @@ func (h *DQueueHandler) RPUSH(key string, value []byte) (int, error) {
 	if h.queues[key] == nil {
 		h.queues[key] = fs.NewInstance(key)
 	}
-	h.queues[key].Push(value)
-	return 1, nil
+	return h.queues[key].Push(value)
 }
 
 func ListenAndServeRedis() {
