@@ -11,7 +11,7 @@
 
 ### 下载依赖
 * go get github.com/julienschmidt/httprouter 一个http服务
-* go get github.com/docker/go-redis-server 一个redis代理
+* go get github.com/wudikua/go-redis-server 一个redis代理
 
 ### 启动
 * go run src/main.go
