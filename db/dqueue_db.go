@@ -4,35 +4,56 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
+	"github.com/wudikua/dqueue/global"
 	"io"
+	"log"
 	"os"
+	"path"
 )
 
 const MAX_FILE_LIMIT = 1024 * 1024
 
 const (
-	ENEW   string = "0"
-	EEMPTY string = "1"
-	EFULL  string = "2"
-	EAGAIN string = "3"
+	ENEW   = "0"
+	EEMPTY = "1"
+	EFULL  = "2"
+	EAGAIN = "3"
+	ESYNC  = "4"
 )
 
 type DQueueDB struct {
-	fpw  *os.File
-	fpr  *os.File
-	fis  *bufio.Writer
-	fos  *bufio.Reader
-	w, r int
-	dbNo int
+	fpw       *os.File
+	fpr       *os.File
+	fis       *bufio.Writer
+	fos       *bufio.Reader
+	w, r      int
+	dbNo      int
+	file      string
+	syncEvent chan string
+	syncBlock bool
 }
 
 func NewInstance(file string, dbNo int) *DQueueDB {
 	var instance *DQueueDB
+	// 创建目录
+	if _, err := os.Stat(path.Dir(file)); err != nil {
+		if err := os.Mkdir(path.Dir(file), 0777); err != nil {
+			return nil
+		}
+	}
 	// 判断数据文件是否存在
 	if _, err := os.Stat(file); err == nil {
 		// 存在
-		fpw, _ := os.OpenFile(file, os.O_RDWR, 0666)
-		fpr, _ := os.OpenFile(file, os.O_RDWR, 0666)
+		fpw, err := os.OpenFile(file, os.O_RDWR, 0666)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
+		fpr, err := os.OpenFile(file, os.O_RDWR, 0666)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
 		fis := bufio.NewWriter(fpw)
 		fos := bufio.NewReader(fpr)
 		instance = &DQueueDB{
@@ -41,11 +62,20 @@ func NewInstance(file string, dbNo int) *DQueueDB {
 			fpr:  fpr,
 			fis:  fis,
 			fos:  fos,
+			file: file,
 		}
 	} else {
 		// 不存在 创建数据文件
-		fpw, _ := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0660)
-		fpr, _ := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0660)
+		fpw, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0660)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
+		fpr, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0660)
+		if err != nil {
+			log.Println(err)
+			return nil
+		}
 		fis := bufio.NewWriter(fpw)
 		fos := bufio.NewReader(fpr)
 		instance = &DQueueDB{
@@ -54,6 +84,7 @@ func NewInstance(file string, dbNo int) *DQueueDB {
 			fpr:  fpr,
 			fis:  fis,
 			fos:  fos,
+			file: file,
 			w:    0,
 			r:    0,
 		}
@@ -77,6 +108,10 @@ func (this *DQueueDB) GetWritePos() int {
 
 func (this *DQueueDB) GetReadPos() int {
 	return this.r
+}
+
+func (this *DQueueDB) GetWriteStream() *bufio.Writer {
+	return this.fis
 }
 
 func (this *DQueueDB) writeInt32(i int) (int, error) {
@@ -116,6 +151,9 @@ func (this *DQueueDB) Write(b []byte) error {
 	// 为了消费不延迟，每次写都刷磁盘，也可以改成每10ms刷磁盘等
 	this.fis.Flush()
 	this.w += n
+	if this.syncBlock {
+		this.syncEvent <- ESYNC
+	}
 	return nil
 }
 
@@ -140,6 +178,53 @@ func (this *DQueueDB) Read() ([]byte, error) {
 	}
 	this.r += n
 	return bs, nil
+}
+
+func (this *DQueueDB) ReadAll(output chan interface{}) error {
+	fpr, _ := os.OpenFile(this.file, os.O_RDWR, 0666)
+	fos := bufio.NewReader(fpr)
+	rpos := 0
+	this.syncEvent = make(chan string)
+	for {
+	retry:
+		cur := rpos
+		if cur == this.w {
+			if this.w >= MAX_FILE_LIMIT {
+				return nil
+			}
+			this.syncBlock = true
+			// 阻塞等待下一次的PUSH
+			select {
+			case e := <-this.syncEvent:
+				if e == ESYNC {
+					this.syncBlock = false
+					goto retry
+				}
+			}
+		}
+		// 读数据长度
+		var bs [4]byte
+		n, err := io.ReadFull(fos, bs)
+		if err != nil {
+			return err
+		}
+		// 增加读的位置
+		rpos += n
+		// 转换成长度
+		next := int(binary.BigEndian.Uint32(bs))
+		length := next - cur - 4
+		//
+		var bs2 [length + 5]byte
+		bs2[0] = byte(global.OP_DB_APPEND)
+		copy(bs2[1:], bs)
+		n, err = io.ReadFull(fos, bs2[5:])
+		if err != nil {
+			return err
+		}
+		log.Println(bs2)
+		output <- bs2
+		rpos += n
+	}
 }
 
 func (this *DQueueDB) Stats() map[string]interface{} {

@@ -34,21 +34,6 @@ func (h *DQueueHandler) RPUSH(key string, value []byte) (int, error) {
 		h.queues[key] = fs.NewInstance(key)
 	}
 	length, err := h.queues[key].Push(value)
-	// 同步到从库
-	v, exists := h.sub[key]
-	if exists {
-		for _, c := range v {
-			select {
-			case c.Channel <- []interface{}{
-				"message",
-				key,
-				value,
-			}:
-			default:
-			}
-		}
-	}
-
 	return length, err
 }
 
@@ -85,28 +70,40 @@ func (h *DQueueHandler) SUBSCRIBE(channels ...[]byte) (*redis.MultiChannelWriter
 			h.sub[string(key)] = append(h.sub[string(key)], cw)
 		}
 		ret.Chans = append(ret.Chans, cw)
+		go h.SYNC(string(key))
 	}
 	return ret, nil
 }
 
-func (h *DQueueHandler) PUBLISH(key string, value []byte) (int, error) {
+func (h *DQueueHandler) SYNC(key string) ([]byte, error) {
 	v, exists := h.sub[key]
 	if !exists {
-		return 0, nil
+		return nil, nil
 	}
-	i := 0
-	for _, c := range v {
+	q, exists := h.queues[key]
+	if !exists {
+		return nil, nil
+	}
+	ouput := make(chan interface{})
+	// 主库的变更全部会写入到output
+	go q.SyncDB(key, ouput)
+	for {
 		select {
-		case c.Channel <- []interface{}{
-			"message",
-			key,
-			value,
-		}:
-			i++
-		default:
+		case d := <-ouput:
+			// 给每个slave发送数据
+			for _, c := range v {
+				select {
+				case c.Channel <- []interface{}{
+					"message",
+					key,
+					d,
+				}:
+					fmt.Println("server send", d)
+				}
+			}
 		}
 	}
-	return i, nil
+	return nil, nil
 }
 
 func ListenAndServeRedis() {
@@ -114,6 +111,7 @@ func ListenAndServeRedis() {
 	var port int
 	flag.StringVar(&host, "h", "127.0.0.1", "host")
 	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+	flag.IntVar(&port, "p", 9008, "port")
 	flag.IntVar(&port, "p", 9008, "port")
 	flag.Parse()
 

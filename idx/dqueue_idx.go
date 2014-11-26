@@ -178,6 +178,12 @@ func (this *DQueueIndex) DecLength() (int, error) {
 	return this.fp.WriteAt(bs, 22)
 }
 
+func (this *DQueueIndex) SetLength(length int) (int, error) {
+	bs := make([]byte, 4)
+	binary.BigEndian.PutUint32(bs, uint32(length))
+	return this.fp.WriteAt(bs, 22)
+}
+
 func (this *DQueueIndex) GetLength() int {
 	return this.length
 }
