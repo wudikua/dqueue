@@ -71,11 +71,9 @@ func (this *DQueueReplication) SyncDQueue(queue string) error {
 			case global.OP_NEW:
 				// 创建新的DB
 				dbNo := int(binary.BigEndian.Uint32(arr[1:]))
-				log.Println("new ", dbNo)
 				dbs = db.NewInstance(fmt.Sprintf("%s/dqueue_%d.db", list[1], dbNo), dbNo)
 			case global.OP_DB_APPEND:
 				// 向已经创建的DB顺序写
-				log.Println("append", arr[1:])
 				stream := dbs.GetWriteStream()
 				_, err := stream.Write(arr)
 				if err != nil {

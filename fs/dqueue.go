@@ -12,12 +12,13 @@ import (
 )
 
 type DQueueFs struct {
-	dbName string
-	path   string
-	dbs    map[int]*db.DQueueDB
-	idx    *idx.DQueueIndex
-	rlock  sync.Mutex
-	wlock  sync.Mutex
+	dbName    string
+	path      string
+	dbs       map[int]*db.DQueueDB
+	idx       *idx.DQueueIndex
+	rlock     sync.Mutex
+	wlock     sync.Mutex
+	syncEvent chan bool
 }
 
 func NewInstance(path string) *DQueueFs {
@@ -29,9 +30,10 @@ func NewInstance(path string) *DQueueFs {
 	}
 
 	instance := &DQueueFs{
-		dbName: "dqueue",
-		path:   path,
-		dbs:    make(map[int]*db.DQueueDB, 1),
+		dbName:    "dqueue",
+		path:      path,
+		dbs:       make(map[int]*db.DQueueDB, 1),
+		syncEvent: make(chan bool),
 	}
 
 	// 载入索引文件
@@ -53,7 +55,6 @@ func NewInstance(path string) *DQueueFs {
 
 	instance.dbs[dbBegin].SetReadPos(idx.GetReadIndex())
 	instance.dbs[dbEnd].SetWritePos(idx.GetWriteIndex())
-
 	return instance
 }
 
@@ -80,6 +81,11 @@ push:
 	this.idx.SetWriteIndex(writePos)
 	this.idx.IncLength()
 	length := this.idx.GetLength()
+	// 触发同步
+	select {
+	case this.syncEvent <- true:
+	default:
+	}
 	return length, nil
 }
 
@@ -112,6 +118,11 @@ pop:
 	this.idx.SetReadIndex(readPos)
 	this.idx.DecLength()
 	length := this.idx.GetLength()
+	// 触发同步
+	select {
+	case this.syncEvent <- true:
+	default:
+	}
 	return length, bs, err
 }
 
@@ -154,46 +165,51 @@ func (this *DQueueFs) SyncIdx(queue string, output chan interface{}) {
 	preWrite := -1
 	bs := make([]byte, 13)
 	for {
+		// 阻塞等等入队或者出队事件的触发
 		select {
-		case <-time.After(time.Second * 1):
-			length := this.idx.GetLength()
-			readNo := this.idx.GetReadNo()
-			writeNo := this.idx.GetWriteNo()
-			readIndex := this.idx.GetReadIndex()
-			writeIndex := this.idx.GetWriteIndex()
-			if preRead != readIndex || preWrite != writeIndex {
-				// 同步消费写入的offset
-				bs[0] = global.OP_IDX_READ_WRITE_LEN
-				binary.BigEndian.PutUint32(bs[1:], uint32(readIndex))
-				binary.BigEndian.PutUint32(bs[5:], uint32(writeIndex))
-				binary.BigEndian.PutUint32(bs[9:], uint32(length))
-				output <- bs
-				preRead = readIndex
-				preWrite = writeIndex
-			}
+		case <-time.After(time.Second * 10):
+			// 10秒强制检查同步
+			goto check_send
+		case <-this.syncEvent:
+		}
+	check_send:
+		length := this.idx.GetLength()
+		readNo := this.idx.GetReadNo()
+		writeNo := this.idx.GetWriteNo()
+		readIndex := this.idx.GetReadIndex()
+		writeIndex := this.idx.GetWriteIndex()
+		if preRead != readIndex || preWrite != writeIndex {
+			// 同步消费写入的offset
+			bs[0] = global.OP_IDX_READ_WRITE_LEN
+			binary.BigEndian.PutUint32(bs[1:], uint32(readIndex))
+			binary.BigEndian.PutUint32(bs[5:], uint32(writeIndex))
+			binary.BigEndian.PutUint32(bs[9:], uint32(length))
+			output <- bs
+			preRead = readIndex
+			preWrite = writeIndex
+		}
 
-			if preWriteNo != writeNo {
-				// 写队列换页
-				output <- []byte{
-					global.OP_CHANGE_WRITENO,
-					byte(writeNo >> 24),
-					byte(writeNo >> 16),
-					byte(writeNo >> 8),
-					byte(writeNo + 1),
-				}
-				preWriteNo = writeNo
+		if preWriteNo != writeNo {
+			// 写队列换页
+			output <- []byte{
+				global.OP_CHANGE_WRITENO,
+				byte(writeNo >> 24),
+				byte(writeNo >> 16),
+				byte(writeNo >> 8),
+				byte(writeNo + 1),
 			}
-			if preReadNo != readNo {
-				// 读队列换页
-				output <- []byte{
-					global.OP_CHANGE_READNO,
-					byte(readNo >> 24),
-					byte(readNo >> 16),
-					byte(readNo >> 8),
-					byte(readNo + 1),
-				}
-				preReadNo = readNo
+			preWriteNo = writeNo
+		}
+		if preReadNo != readNo {
+			// 读队列换页
+			output <- []byte{
+				global.OP_CHANGE_READNO,
+				byte(readNo >> 24),
+				byte(readNo >> 16),
+				byte(readNo >> 8),
+				byte(readNo + 1),
 			}
+			preReadNo = readNo
 		}
 
 	}

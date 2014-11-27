@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path"
-	"time"
 )
 
 const MAX_FILE_LIMIT = 1024 * 1024
@@ -19,7 +18,6 @@ const (
 	EEMPTY = "1"
 	EFULL  = "2"
 	EAGAIN = "3"
-	ESYNC  = "4"
 )
 
 type DQueueDB struct {
@@ -30,8 +28,7 @@ type DQueueDB struct {
 	w, r      int
 	dbNo      int
 	file      string
-	syncEvent chan string
-	syncBlock bool
+	syncEvent chan bool
 }
 
 func NewInstance(file string, dbNo int) *DQueueDB {
@@ -152,6 +149,11 @@ func (this *DQueueDB) Write(b []byte) error {
 	// 为了消费不延迟，每次写都刷磁盘，也可以改成每10ms刷磁盘等
 	this.fis.Flush()
 	this.w += n
+	// 触发同步
+	select {
+	case this.syncEvent <- true:
+	default:
+	}
 	return nil
 }
 
@@ -182,7 +184,7 @@ func (this *DQueueDB) ReadAll(output chan interface{}) error {
 	fpr, _ := os.OpenFile(this.file, os.O_RDWR, 0666)
 	fos := bufio.NewReader(fpr)
 	rpos := 0
-	this.syncEvent = make(chan string)
+	this.syncEvent = make(chan bool)
 	for {
 	retry:
 		cur := rpos
@@ -191,18 +193,12 @@ func (this *DQueueDB) ReadAll(output chan interface{}) error {
 				return nil
 			}
 			// 阻塞等待下一次的PUSH
-			// for {
-			// 	select {
-			// 	case e := <-this.syncEvent:
-			// 		if e == ESYNC {
-			// 			this.syncBlock = false
-			// 			break
-			// 		}
-			// 	default:
-			// 		this.syncBlock = true
-			// 	}
-			// }
-			time.Sleep(time.Second * 1)
+			for {
+				select {
+				case <-this.syncEvent:
+					break
+				}
+			}
 			goto retry
 		}
 		// 读数据长度
