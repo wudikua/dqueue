@@ -1,12 +1,14 @@
 package fs
 
 import (
+	"encoding/binary"
 	"fmt"
 	"github.com/wudikua/dqueue/db"
 	"github.com/wudikua/dqueue/global"
 	"github.com/wudikua/dqueue/idx"
 	"os"
 	"sync"
+	"time"
 )
 
 type DQueueFs struct {
@@ -16,7 +18,6 @@ type DQueueFs struct {
 	idx    *idx.DQueueIndex
 	rlock  sync.Mutex
 	wlock  sync.Mutex
-	slave  bool
 }
 
 func NewInstance(path string) *DQueueFs {
@@ -31,7 +32,6 @@ func NewInstance(path string) *DQueueFs {
 		dbName: "dqueue",
 		path:   path,
 		dbs:    make(map[int]*db.DQueueDB, 1),
-		slave:  false,
 	}
 
 	// 载入索引文件
@@ -76,9 +76,11 @@ push:
 		return this.idx.GetLength(), err
 	}
 	// 写索引文件
-	this.idx.SetWriteIndex(dbs.GetWritePos())
+	writePos := dbs.GetWritePos()
+	this.idx.SetWriteIndex(writePos)
 	this.idx.IncLength()
-	return this.idx.GetLength(), nil
+	length := this.idx.GetLength()
+	return length, nil
 }
 
 func (this *DQueueFs) Pop() (int, []byte, error) {
@@ -106,9 +108,11 @@ pop:
 		return this.idx.GetLength(), bs, err
 	}
 	// 写索引文件
-	this.idx.SetReadIndex(dbs.GetReadPos())
+	readPos := dbs.GetReadPos()
+	this.idx.SetReadIndex(readPos)
 	this.idx.DecLength()
-	return this.idx.GetLength(), bs, err
+	length := this.idx.GetLength()
+	return length, bs, err
 }
 
 func (this *DQueueFs) SyncDB(queue string, output chan interface{}) *db.DQueueDB {
@@ -131,6 +135,8 @@ func (this *DQueueFs) SyncDB(queue string, output chan interface{}) *db.DQueueDB
 				dbold.SetWritePos(db.MAX_FILE_LIMIT)
 				dbold.ReadAll(output)
 			} else {
+				// 每1s同步消费进度
+				go this.SyncIdx(queue, output)
 				// 使用当前对象
 				this.dbs[i].ReadAll(output)
 			}
@@ -139,6 +145,58 @@ func (this *DQueueFs) SyncDB(queue string, output chan interface{}) *db.DQueueDB
 		}
 	}
 
+}
+
+func (this *DQueueFs) SyncIdx(queue string, output chan interface{}) {
+	preWriteNo := -1
+	preReadNo := -1
+	preRead := -1
+	preWrite := -1
+	bs := make([]byte, 13)
+	for {
+		select {
+		case <-time.After(time.Second * 1):
+			length := this.idx.GetLength()
+			readNo := this.idx.GetReadNo()
+			writeNo := this.idx.GetWriteNo()
+			readIndex := this.idx.GetReadIndex()
+			writeIndex := this.idx.GetWriteIndex()
+			if preRead != readIndex || preWrite != writeIndex {
+				// 同步消费写入的offset
+				bs[0] = global.OP_IDX_READ_WRITE_LEN
+				binary.BigEndian.PutUint32(bs[1:], uint32(readIndex))
+				binary.BigEndian.PutUint32(bs[5:], uint32(writeIndex))
+				binary.BigEndian.PutUint32(bs[9:], uint32(length))
+				output <- bs
+				preRead = readIndex
+				preWrite = writeIndex
+			}
+
+			if preWriteNo != writeNo {
+				// 写队列换页
+				output <- []byte{
+					global.OP_CHANGE_WRITENO,
+					byte(writeNo >> 24),
+					byte(writeNo >> 16),
+					byte(writeNo >> 8),
+					byte(writeNo + 1),
+				}
+				preWriteNo = writeNo
+			}
+			if preReadNo != readNo {
+				// 读队列换页
+				output <- []byte{
+					global.OP_CHANGE_READNO,
+					byte(readNo >> 24),
+					byte(readNo >> 16),
+					byte(readNo >> 8),
+					byte(readNo + 1),
+				}
+				preReadNo = readNo
+			}
+		}
+
+	}
 }
 
 func (this *DQueueFs) Stats() map[string]interface{} {

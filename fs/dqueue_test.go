@@ -60,7 +60,7 @@ func Test_PopEmpty(t *testing.T) {
 		t.Log(string(bs))
 		t.Fail()
 	}
-	_, err = fs.Pop()
+	_, _, err = fs.Pop()
 	if err == nil {
 		t.Fail()
 	}

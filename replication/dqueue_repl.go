@@ -7,6 +7,7 @@ import (
 	"github.com/wudikua/dqueue/db"
 	"github.com/wudikua/dqueue/fs"
 	"github.com/wudikua/dqueue/global"
+	"github.com/wudikua/dqueue/idx"
 	"github.com/xuyu/goredis"
 	"log"
 )
@@ -50,6 +51,7 @@ func (this *DQueueReplication) Greet() ([]string, error) {
 func (this *DQueueReplication) SyncDQueue(queue string) error {
 	quit := make(chan bool)
 	var dbs *db.DQueueDB
+	var index *idx.DQueueIndex
 	// 初始化数据
 	sub, err := this.master.PubSub()
 	defer sub.Close()
@@ -80,11 +82,58 @@ func (this *DQueueReplication) SyncDQueue(queue string) error {
 					log.Println(err)
 				}
 				stream.Flush()
+			case global.OP_IDX_READ_WRITE_LEN:
+				readIndex := int(binary.BigEndian.Uint32(arr[1:]))
+				writeIndex := int(binary.BigEndian.Uint32(arr[5:]))
+				length := int(binary.BigEndian.Uint32(arr[9:]))
+				if index == nil {
+					// 创建索引文件
+					index = idx.NewInstance(list[1] + "/dqueue.idx")
+				}
+				index.SetReadIndex(readIndex)
+				index.SetWriteIndex(writeIndex)
+				index.SetLength(length)
+				log.Println("sync read write", arr[1:])
 			case global.OP_IDX_READ:
 				// 主库同步读队列的进度
-			case OP_IDX_WRITE:
+				readIndex := int(binary.BigEndian.Uint32(arr[1:5]))
+				length := int(binary.BigEndian.Uint32(arr[5:9]))
 				// 主库同步写队列的进度
-			case OP_HEARTBEAT:
+				if index == nil {
+					// 创建索引文件
+					index = idx.NewInstance(list[1] + "/dqueue.idx")
+				}
+				index.SetWriteIndex(readIndex)
+				index.SetLength(length)
+			case global.OP_IDX_WRITE:
+				writeIndex := int(binary.BigEndian.Uint32(arr[1:5]))
+				length := int(binary.BigEndian.Uint32(arr[5:9]))
+				// 主库同步写队列的进度
+				if index == nil {
+					// 创建索引文件
+					index = idx.NewInstance(list[1] + "/dqueue.idx")
+				}
+				index.SetWriteIndex(writeIndex)
+				index.SetLength(length)
+			case global.OP_CHANGE_READNO:
+				// 主库读换页
+				dbNo := int(binary.BigEndian.Uint32(arr[1:]))
+				if index == nil {
+					// 创建索引文件
+					index = idx.NewInstance(list[1] + "/dqueue.idx")
+				}
+				index.SetReadNo(dbNo)
+				log.Println("change read", dbNo)
+			case global.OP_CHANGE_WRITENO:
+				// 主库写换页
+				dbNo := int(binary.BigEndian.Uint32(arr[1:]))
+				if index == nil {
+					// 创建索引文件
+					index = idx.NewInstance(list[1] + "/dqueue.idx")
+				}
+				index.SetWriteNo(dbNo)
+				log.Println("change write", dbNo)
+			case global.OP_HEARTBEAT:
 				// 主库发过来的心跳代表自己还活着
 			default:
 				// 未知的操作数

@@ -80,11 +80,13 @@ func (h *DQueueHandler) SYNC(key string) ([]byte, error) {
 	if !exists {
 		return nil, nil
 	}
+fetch_queue:
 	q, exists := h.queues[key]
 	if !exists {
-		return nil, nil
+		h.queues[key] = fs.NewInstance(key)
+		goto fetch_queue
 	}
-	ouput := make(chan interface{})
+	ouput := make(chan interface{}, 1024*1024)
 	// 主库的变更全部会写入到output
 	go q.SyncDB(key, ouput)
 	for {
@@ -98,7 +100,8 @@ func (h *DQueueHandler) SYNC(key string) ([]byte, error) {
 					key,
 					d,
 				}:
-					fmt.Println("server send", d)
+					// time.Sleep(time.Second * 1)
+					// fmt.Println("server send", d)
 				}
 			}
 		}
@@ -111,7 +114,6 @@ func ListenAndServeRedis() {
 	var port int
 	flag.StringVar(&host, "h", "127.0.0.1", "host")
 	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-	flag.IntVar(&port, "p", 9008, "port")
 	flag.IntVar(&port, "p", 9008, "port")
 	flag.Parse()
 

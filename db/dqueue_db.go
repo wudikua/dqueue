@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"time"
 )
 
 const MAX_FILE_LIMIT = 1024 * 1024
@@ -151,9 +152,6 @@ func (this *DQueueDB) Write(b []byte) error {
 	// 为了消费不延迟，每次写都刷磁盘，也可以改成每10ms刷磁盘等
 	this.fis.Flush()
 	this.w += n
-	if this.syncBlock {
-		this.syncEvent <- ESYNC
-	}
 	return nil
 }
 
@@ -192,18 +190,23 @@ func (this *DQueueDB) ReadAll(output chan interface{}) error {
 			if this.w >= MAX_FILE_LIMIT {
 				return nil
 			}
-			this.syncBlock = true
 			// 阻塞等待下一次的PUSH
-			select {
-			case e := <-this.syncEvent:
-				if e == ESYNC {
-					this.syncBlock = false
-					goto retry
-				}
-			}
+			// for {
+			// 	select {
+			// 	case e := <-this.syncEvent:
+			// 		if e == ESYNC {
+			// 			this.syncBlock = false
+			// 			break
+			// 		}
+			// 	default:
+			// 		this.syncBlock = true
+			// 	}
+			// }
+			time.Sleep(time.Second * 1)
+			goto retry
 		}
 		// 读数据长度
-		var bs [4]byte
+		bs := make([]byte, 4)
 		n, err := io.ReadFull(fos, bs)
 		if err != nil {
 			return err
@@ -213,16 +216,20 @@ func (this *DQueueDB) ReadAll(output chan interface{}) error {
 		// 转换成长度
 		next := int(binary.BigEndian.Uint32(bs))
 		length := next - cur - 4
-		//
-		var bs2 [length + 5]byte
+		// 重新申请数据长度 + 1个字节操作数 + 4个字节长度的字节数组
+		bs2 := make([]byte, length+5)
+		// 设置操作数
 		bs2[0] = byte(global.OP_DB_APPEND)
+		// 设置长度,又做了一次拷贝
 		copy(bs2[1:], bs)
+		// 读DB数据
 		n, err = io.ReadFull(fos, bs2[5:])
 		if err != nil {
 			return err
 		}
-		log.Println(bs2)
+		// 放入publish的channel
 		output <- bs2
+		// 增加同步的pos位置
 		rpos += n
 	}
 }
