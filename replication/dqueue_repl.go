@@ -93,7 +93,6 @@ func (this *DQueueReplication) SyncDQueue(queue string) error {
 				index.SetReadIndex(readIndex)
 				index.SetWriteIndex(writeIndex)
 				index.SetLength(length)
-				log.Println("sync read write", arr[1:])
 			case global.OP_IDX_READ:
 				// 主库同步读队列的进度
 				readIndex := int(binary.BigEndian.Uint32(arr[1:5]))
@@ -123,7 +122,7 @@ func (this *DQueueReplication) SyncDQueue(queue string) error {
 					index = idx.NewInstance(list[1] + "/dqueue.idx")
 				}
 				index.SetReadNo(dbNo)
-				log.Println("change read", dbNo)
+				// log.Println("change read", dbNo)
 			case global.OP_CHANGE_WRITENO:
 				// 主库写换页
 				dbNo := int(binary.BigEndian.Uint32(arr[1:]))
@@ -132,7 +131,7 @@ func (this *DQueueReplication) SyncDQueue(queue string) error {
 					index = idx.NewInstance(list[1] + "/dqueue.idx")
 				}
 				index.SetWriteNo(dbNo)
-				log.Println("change write", dbNo)
+				// log.Println("change write", dbNo)
 			case global.OP_HEARTBEAT:
 				// 主库发过来的心跳代表自己还活着
 			default:
