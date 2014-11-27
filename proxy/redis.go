@@ -7,6 +7,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/wudikua/dqueue/fs"
 	redis "github.com/wudikua/go-redis-server"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -76,6 +77,9 @@ func (h *DQueueHandler) SUBSCRIBE(channels ...[]byte) (*redis.MultiChannelWriter
 }
 
 func (h *DQueueHandler) SYNC(key string) ([]byte, error) {
+	defer func() {
+		log.Println("sync", key, "end")
+	}()
 	v, exists := h.sub[key]
 	if !exists {
 		return nil, nil
@@ -87,8 +91,10 @@ fetch_queue:
 		goto fetch_queue
 	}
 	ouput := make(chan interface{}, 1024*1024)
+	quit := make(chan bool)
 	// 主库的变更全部会写入到output
-	go q.SyncDB(key, ouput)
+	go q.SyncDB(key, ouput, quit)
+	listeners := len(v)
 	for {
 		select {
 		case d := <-ouput:
@@ -100,8 +106,13 @@ fetch_queue:
 					key,
 					d,
 				}:
-					// time.Sleep(time.Second * 1)
-					// fmt.Println("server send", d)
+				case <-c.ClientChan:
+					listeners--
+					if listeners <= 0 {
+						log.Println("all subers exit")
+						close(quit)
+						return nil, nil
+					}
 				}
 			}
 		}

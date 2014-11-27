@@ -180,7 +180,7 @@ func (this *DQueueDB) Read() ([]byte, error) {
 	return bs, nil
 }
 
-func (this *DQueueDB) ReadAll(output chan interface{}) error {
+func (this *DQueueDB) ReadAll(output chan interface{}, quit chan bool) error {
 	fpr, _ := os.OpenFile(this.file, os.O_RDWR, 0666)
 	fos := bufio.NewReader(fpr)
 	rpos := 0
@@ -195,6 +195,8 @@ func (this *DQueueDB) ReadAll(output chan interface{}) error {
 			// 阻塞等待下一次的PUSH
 			for {
 				select {
+				case <-quit:
+					return nil
 				case <-this.syncEvent:
 					break
 				}

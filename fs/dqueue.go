@@ -126,12 +126,22 @@ pop:
 	return length, bs, err
 }
 
-func (this *DQueueFs) SyncDB(queue string, output chan interface{}) *db.DQueueDB {
+func (this *DQueueFs) SyncDB(queue string, output chan interface{}, quit chan bool) *db.DQueueDB {
 	for {
+		select {
+		case <-quit:
+			return nil
+		default:
+		}
 		dbBegin := this.idx.GetReadNo()
 		dbEnd := this.idx.GetWriteNo()
 		// 从第一个需要读的db开始同步,一直同步到当前在写的db
 		for i := dbBegin; i <= dbEnd; i++ {
+			select {
+			case <-quit:
+				return nil
+			default:
+			}
 			output <- []byte{
 				global.OP_NEW,
 				byte(i >> 24),
@@ -144,12 +154,12 @@ func (this *DQueueFs) SyncDB(queue string, output chan interface{}) *db.DQueueDB
 				// 不是的话创建对象，使用readAll
 				dbold := db.NewInstance(fmt.Sprintf("%s/dqueue_%d.db", this.path, i), i)
 				dbold.SetWritePos(db.MAX_FILE_LIMIT)
-				dbold.ReadAll(output)
+				dbold.ReadAll(output, quit)
 			} else {
 				// 每1s同步消费进度
 				go this.SyncIdx(queue, output)
 				// 使用当前对象
-				this.dbs[i].ReadAll(output)
+				this.dbs[i].ReadAll(output, quit)
 			}
 			// 修改dbEnd
 			dbEnd = this.idx.GetWriteNo()
