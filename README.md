@@ -17,6 +17,14 @@
 ### 启动
 * go run src/main.go
 
+### 启动从库
+```
+import "github.com/wudikua/dqueue/replication"
+instance, err := NewDQueueReplication(":9008")
+instance.SyncDQueue("redis-buffering")
+```
+从库启动以后会不断同步队列的数据文件和索引文件
+
 ##测试
 
 ```
