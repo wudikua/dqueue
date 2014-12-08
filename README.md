@@ -53,6 +53,10 @@ PASS
 Benchmark_PushAndPop      500000	      6646 ns/op
 ok  	fs	3.410s
 ```
+## 整体性能测试
+```
+redis-benchmark -p 9008 -c 20 -n 1000000 -q RPUSH 'redis-buffering' 'aaaa'
+```
 
 ## 可用性
 * 通过主库的异步写从库来做replication保证可用
